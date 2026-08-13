@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 _TIME = re.compile(r"(\d+):(\d{2}):(\d{2})[,.](\d{1,3})")
+_SENTENCE_END = re.compile(r"[。！？!?](?:[」』）】〉》〕］”’\"']*)$")
 _AUTO_ENCODINGS = ("utf-8-sig", "cp932")
 
 
@@ -68,16 +69,17 @@ def parse_srt(text: str) -> list[dict]:
 def group_scenes(
     cues: list[dict], target_sec: float, min_sec: float, max_sec: float
 ) -> list[dict]:
-    """字幕を指定時間に近いシーンへまとめる。"""
+    """日本語の文末と字幕間の無音を考慮してシーンへまとめる。"""
     scenes: list[dict] = []
-    bucket: list[dict] = []
     target_ms, min_ms, max_ms = target_sec * 1000, min_sec * 1000, max_sec * 1000
 
-    def flush() -> None:
-        if not bucket:
-            return
-        start = bucket[0]["startMs"]
-        end = bucket[-1]["endMs"]
+    if not (0 <= min_ms <= target_ms <= max_ms):
+        raise ValueError("0 <= min_sec <= target_sec <= max_sec となるよう指定してください")
+    if not cues:
+        return scenes
+
+    def add_scene(bucket: list[dict]) -> None:
+        start, end = bucket[0]["startMs"], bucket[-1]["endMs"]
         scenes.append(
             {
                 "sceneIndex": len(scenes) + 1,
@@ -88,16 +90,40 @@ def group_scenes(
                 "text": " ".join(cue["text"] for cue in bucket).strip(),
             }
         )
-        bucket.clear()
 
-    for cue in cues:
-        if bucket and cue["endMs"] - bucket[0]["startMs"] > max_ms:
-            flush()
-        bucket.append(cue)
-        span = bucket[-1]["endMs"] - bucket[0]["startMs"]
-        if span >= target_ms and span >= min_ms:
-            flush()
-    flush()
+    start_idx = 0
+    while start_idx < len(cues):
+        scene_start = cues[start_idx]["startMs"]
+        if cues[-1]["endMs"] - scene_start <= max_ms:
+            add_scene(cues[start_idx:])
+            break
+
+        candidates: list[tuple[tuple[int, int, float], int]] = []
+        last_fitting = start_idx
+        for end_idx in range(start_idx, len(cues)):
+            span = cues[end_idx]["endMs"] - scene_start
+            if span > max_ms:
+                break
+            last_fitting = end_idx
+            if span < min_ms:
+                continue
+
+            text = cues[end_idx]["text"].rstrip()
+            punctuation = 1 if _SENTENCE_END.search(text) else 0
+            gap = 0
+            if end_idx + 1 < len(cues):
+                gap = max(0, cues[end_idx + 1]["startMs"] - cues[end_idx]["endMs"])
+            # 文末、無音、目標時間への近さの順で境界を選ぶ。
+            boundary_score = punctuation * 2 + (2 if gap >= 1000 else 1 if gap >= 500 else 0)
+            candidates.append(((boundary_score, -abs(span - target_ms), span), end_idx))
+
+        if candidates:
+            end_idx = max(candidates, key=lambda item: item[0])[1]
+        else:
+            # 最短時間に届かなくても、上限を越える前の最後の字幕で切る。
+            end_idx = last_fitting
+        add_scene(cues[start_idx : end_idx + 1])
+        start_idx = end_idx + 1
     return scenes
 
 

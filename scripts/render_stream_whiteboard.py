@@ -62,6 +62,35 @@ def _frame_progress_indices(n_steps: int, target_frames: int) -> list[int]:
     return [round(f * (n_steps - 1) / (target_frames - 1)) for f in range(target_frames)]
 
 
+def _order_text_cells(active: np.ndarray) -> list[tuple[int, int]]:
+    """Order active grid cells as text: lines top-to-bottom, columns left-to-right.
+
+    A blank grid row separates lines.  Within a line, cells in the same column are
+    visited from top to bottom so the pen never jumps backwards along the text.
+    """
+    occupied_rows = np.flatnonzero(active.any(axis=1))
+    if occupied_rows.size == 0:
+        return []
+
+    line_ranges: list[tuple[int, int]] = []
+    start = previous = int(occupied_rows[0])
+    for row in occupied_rows[1:]:
+        row = int(row)
+        if row > previous + 1:
+            line_ranges.append((start, previous + 1))
+            start = row
+        previous = row
+    line_ranges.append((start, previous + 1))
+
+    ordered: list[tuple[int, int]] = []
+    for top, bottom in line_ranges:
+        rows, cols = np.where(active[top:bottom])
+        cells = [(int(row + top), int(col)) for row, col in zip(rows, cols)]
+        cells.sort(key=lambda cell: (cell[1], cell[0]))
+        ordered.extend(cells)
+    return ordered
+
+
 # ──────────────────────────────────────────────────────────────
 # 每区域的 stream 笔迹渲染，写入共享持久画布
 # ──────────────────────────────────────────────────────────────
@@ -161,6 +190,13 @@ class RegionStreamRenderer:
             return []
         streams = sr.cluster_ink_streams(active)
         return sr.flatten_streams(streams)
+
+    def _region_text_path(self, allowed: np.ndarray) -> list[tuple[int, int]]:
+        """Build a predictable reading-order path for a text annotation."""
+        allowed_u8 = allowed.astype(np.uint8)
+        allowed_cell = sr._to_grid_blocks(allowed_u8, self.cfg.grid_edge).any(axis=(2, 3))
+        active = self.active_all & allowed_cell
+        return _order_text_cells(active)
 
     def _region_skeleton_strokes(self, allowed: np.ndarray) -> list[list[tuple[int, int]]]:
         """骨格方式で、領域内の線を細線化し、8近傍追跡と再標本化で滑らかにする。"""
@@ -379,7 +415,16 @@ class RegionStreamRenderer:
                 ink_frames = max(1, round(dur_ms * cfg.ink_weight / weight_sum * cfg.fps / 1000))
                 color_frames = max(1, round(dur_ms * cfg.color_weight / weight_sum * cfg.fps / 1000))
 
-                if cfg.ink_path_mode == "skeleton":
+                if element.get("type") == "text":
+                    path = self._region_text_path(allowed)
+                    if path:
+                        samples, pen_lifts, sample_cell = self._grid_plan(path)
+                        self._lay_ink_grid(writer, ink_frames, samples, pen_lifts, sample_cell, path, allowed)
+                        centers = [self._cell_center(c) for c in path]
+                    else:
+                        self._lay_ink(writer, ink_frames, [], set(), allowed)
+                        centers = []
+                elif cfg.ink_path_mode == "skeleton":
                     strokes = self._region_skeleton_strokes(allowed)
                     if strokes:
                         samples, pen_lifts = [], set()
@@ -402,7 +447,7 @@ class RegionStreamRenderer:
                         self._lay_ink_grid(writer, ink_frames, samples, pen_lifts, sample_cell, path, allowed)
                         centers = [self._cell_center(c) for c in path]
                     else:
-                        self._lay_ink(writer, ink_frames, [], set(), None, allowed)
+                        self._lay_ink(writer, ink_frames, [], set(), allowed)
                         centers = []
 
                 cur_ms += ink_frames * ms_per_frame
