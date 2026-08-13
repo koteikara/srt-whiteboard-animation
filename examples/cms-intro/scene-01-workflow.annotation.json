@@ -1,0 +1,52 @@
+{
+  "sceneId": "scene-01-workflow",
+  "canvas": { "width": 1672, "height": 941 },
+  "storyBasis": "記事を作成し、内容を入力して、担当者へ確認を依頼する三段階の流れ。",
+  "sceneDurationMs": 23000,
+  "elements": [
+    {
+      "id": "article-draft",
+      "label": "記事カードと鉛筆",
+      "sequence": 1,
+      "narrativeRole": "記事作成という題材の提示",
+      "subtitle": "記事作成の基本操作",
+      "type": "structure",
+      "region": { "x": 42, "y": 215, "width": 610, "height": 555 },
+      "reveal": { "direction": "top_to_bottom", "startMs": 200, "durationMs": 4000, "maskPaddingPx": 18, "protectedRegions": [] },
+      "handPath": { "start": [340, 225], "end": [190, 755], "easing": "easeInOut" }
+    },
+    {
+      "id": "new-article",
+      "label": "新しい記事",
+      "sequence": 2,
+      "narrativeRole": "新規記事を作る最初の工程",
+      "subtitle": "この動画では、新しい記事を作り、確認に回すまでの流れを紹介します。",
+      "type": "object",
+      "region": { "x": 675, "y": 320, "width": 305, "height": 285 },
+      "reveal": { "direction": "left_to_right", "startMs": 4500, "durationMs": 4000, "maskPaddingPx": 18, "protectedRegions": [] },
+      "handPath": { "start": [685, 460], "end": [965, 460], "easing": "easeInOut" }
+    },
+    {
+      "id": "content-entry",
+      "label": "内容の入力",
+      "sequence": 3,
+      "narrativeRole": "必要な情報を入力する中間工程",
+      "subtitle": "操作は三つです。記事を作成し、必要な情報を入力して、確認を依頼します。",
+      "type": "action",
+      "region": { "x": 995, "y": 280, "width": 345, "height": 310 },
+      "reveal": { "direction": "top_to_bottom", "startMs": 9000, "durationMs": 4200, "maskPaddingPx": 18, "protectedRegions": [] },
+      "handPath": { "start": [1165, 290], "end": [1165, 580], "easing": "easeInOut" }
+    },
+    {
+      "id": "review-request",
+      "label": "確認を受け取る担当者",
+      "sequence": 4,
+      "narrativeRole": "作成した記事を確認へ回した結果",
+      "subtitle": "記事を作成し、必要な情報を入力して、確認を依頼します。それでは、実際の画面で操作してみましょう。",
+      "type": "character",
+      "region": { "x": 1350, "y": 320, "width": 250, "height": 295 },
+      "reveal": { "direction": "top_to_bottom", "startMs": 13500, "durationMs": 9000, "maskPaddingPx": 18, "protectedRegions": [] },
+      "handPath": { "start": [1475, 330], "end": [1475, 605], "easing": "easeInOut" }
+    }
+  ]
+}

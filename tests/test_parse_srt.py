@@ -45,6 +45,11 @@ class ReadSrtTests(unittest.TestCase):
 
 
 class ParseSrtTests(unittest.TestCase):
+    @staticmethod
+    def cue(index, start, end, text):
+        return {"index": index, "startMs": start, "endMs": end,
+                "durMs": end - start, "text": text}
+
     def test_parses_japanese_and_multiline_text(self):
         cues = parse_srt_module.parse_srt(
             "\ufeff1\n00:00:01,250 --> 00:00:03.500\n一行目です。\n二行目です。\n"
@@ -62,6 +67,41 @@ class ParseSrtTests(unittest.TestCase):
             set(scenes[0]),
             {"sceneIndex", "startMs", "endMs", "sceneDurationMs", "cueRange", "text"},
         )
+
+    def test_prefers_japanese_sentence_end_near_target(self):
+        cues = [
+            self.cue(1, 0, 9000, "前半です"),
+            self.cue(2, 9000, 18000, "まだ続きます。"),
+            self.cue(3, 18000, 29000, "句点なし"),
+            self.cue(4, 29000, 38000, "後半です。"),
+        ]
+        scenes = parse_srt_module.group_scenes(cues, 25, 15, 35)
+        self.assertEqual(scenes[0]["cueRange"], [1, 2])
+
+    def test_prefers_long_gap_as_boundary(self):
+        cues = [
+            self.cue(1, 0, 10000, "説明を続けます"),
+            self.cue(2, 10000, 21000, "ここで一息"),
+            self.cue(3, 22500, 30000, "次の話題"),
+            self.cue(4, 30000, 41000, "終了"),
+        ]
+        scenes = parse_srt_module.group_scenes(cues, 25, 15, 35)
+        self.assertEqual(scenes[0]["cueRange"], [1, 2])
+
+    def test_never_exceeds_max_when_a_boundary_is_available(self):
+        cues = [
+            self.cue(1, 0, 12000, "一。"),
+            self.cue(2, 12000, 24000, "二。"),
+            self.cue(3, 24000, 36000, "三。"),
+            self.cue(4, 36000, 48000, "四。"),
+        ]
+        scenes = parse_srt_module.group_scenes(cues, 30, 20, 35)
+        self.assertTrue(all(scene["sceneDurationMs"] <= 35000 for scene in scenes))
+        self.assertEqual([scene["cueRange"] for scene in scenes], [[1, 2], [3, 4]])
+
+    def test_rejects_inconsistent_duration_options(self):
+        with self.assertRaises(ValueError):
+            parse_srt_module.group_scenes([], 30, 35, 40)
 
 
 if __name__ == "__main__":
