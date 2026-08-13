@@ -23,21 +23,21 @@ SRT字幕を、物語の順序に沿って描かれる白板手描き動画へ�
 
 ## 動作環境
 
-Python環境と依存パッケージをSkill内の`.venv`へ用意します。
+Python 3.11以降の実行環境を用意し、依存パッケージをSkill内の`.venv`へ導入します。Windowsで`python --version`がバージョン番号を表示せずMicrosoft Storeを開く場合、その`python`は実体のないエイリアスです。先に[Python公式サイト](https://www.python.org/downloads/windows/)からPythonをインストールしてください。
 
 ```bash
 python scripts/prepare_env.py --check
 python scripts/prepare_env.py
 ```
 
-確認コマンドの最終行に表示される`ENV_PY=<パス>`を、レンダリングと結合で使います。
+`python --version`で実体を確認してから実行してください。確認コマンドの最終行に表示される`ENV_PY=<パス>`を、その後の字幕解析、レンダリング、結合で使います。
 
 ## 基本コマンド
 
 字幕を解析します。
 
 ```bash
-python scripts/parse_srt.py <字幕.srt> --target-sec 30 --min-sec 25 --max-sec 35
+<ENV_PY> scripts/parse_srt.py <字幕.srt> --target-sec 30 --min-sec 25 --max-sec 35
 ```
 
 領域確認画像を作ります。
