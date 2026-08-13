@@ -1,16 +1,16 @@
 #!/usr/bin/env python3
 """
-流式笔迹动画 - 环境引导脚本
+連続筆跡アニメーション - 環境準備スクリプト
 
-职责：
-  1. 在 skill 目录下建立隔离的 Python 虚拟环境（已存在则复用）
-  2. 核对运行所需的第三方库是否可导入
-  3. 自动补齐缺失的库
-  4. 末行打印 ENV_PY=<解释器路径>，供上层调用方捕获
+役割：
+1. Skillディレクトリ内に独立したPython仮想環境を作成します。作成済みの場合は再利用します。
+2. 実行に必要な外部ライブラリを読み込めるか確認します。
+3. 不足しているライブラリを自動的にインストールします。
+4. 呼び出し元が取得できるよう、最終行にENV_PY=<インタープリターのパス>を出力します。
 
-用法：
-  python prepare_env.py          # 建环境 + 补依赖，输出 ENV_PY
-  python prepare_env.py --check  # 仅探测，缺东西就以非零码退出
+使用方法：
+python prepare_env.py          # 環境を作成して依存関係を補い、ENV_PYを出力
+python prepare_env.py --check  # 確認のみ。不足があれば0以外の終了コードを返す
 """
 from __future__ import annotations
 
@@ -43,16 +43,16 @@ def interpreter_path() -> Path:
 def ensure_venv(check_only: bool) -> Path:
     py = interpreter_path()
     if VENV_ROOT.exists() and py.exists():
-        print(f"[ok] 复用现有虚拟环境: {VENV_ROOT}")
+        print(f"[OK] 既存の仮想環境を再利用します：{VENV_ROOT}")
         return py
 
     if check_only:
-        print(f"[err] 虚拟环境尚未建立: {VENV_ROOT}")
+        print(f"[エラー] 仮想環境がまだ作成されていません：{VENV_ROOT}")
         sys.exit(1)
 
-    print(f"[..] 建立虚拟环境: {VENV_ROOT}")
+    print(f"[..] 仮想環境を作成しています：{VENV_ROOT}")
     venv.create(str(VENV_ROOT), with_pip=True)
-    print("[ok] 虚拟环境就绪")
+    print("[OK] 仮想環境の準備ができました")
     return py
 
 
@@ -67,16 +67,16 @@ def can_import(py: Path, import_name: str) -> bool:
 def install(py: Path, packages: list[str]) -> bool:
     if not packages:
         return True
-    print(f"[..] 安装依赖: {', '.join(packages)}")
+    print(f"[..] 依存関係をインストールしています：{', '.join(packages)}")
     res = subprocess.run(
         [str(py), "-m", "pip", "install", "--quiet", *packages],
         capture_output=True,
         text=True,
     )
     if res.returncode != 0:
-        print(f"[err] 安装失败:\n{res.stderr}")
+        print(f"[エラー] インストールに失敗しました：\n{res.stderr}")
         return False
-    print("[ok] 依赖安装完成")
+    print("[OK] 依存関係のインストールが完了しました")
     return True
 
 
@@ -95,7 +95,7 @@ def main() -> None:
 
     if missing:
         if check_only:
-            print(f"\n缺 {len(missing)} 个依赖: {', '.join(missing)}")
+            print(f"\n不足している依存関係は{len(missing)}件です：{', '.join(missing)}")
             sys.exit(1)
         if not install(py, missing):
             sys.exit(1)

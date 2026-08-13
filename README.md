@@ -1,169 +1,90 @@
-# SRT 白板动画 Skill
+# SRT白板アニメーション Skill（日本語版）
 
-将 SRT 字幕转为按叙事顺序绘制的白板手绘视频Skill。它结合了**分区遮罩编排**与**流式笔迹绘制**：每个元素跟随字幕依次出场，笔尖在区域内连续落墨，再逐步添彩，最终导出 MP4。
+SRT字幕を、物語の順序に沿って描かれる白板手描き動画へ変換するCodex Skillです。領域マスクで要素の登場順を制御し、各領域では筆先が連続して線を描いた後、色を加えます。完成した幕はMP4として書き出せます。
 
-适合把知识讲解、故事口播、课程字幕或短视频文案制作成暖米黄色纸张底的手绘动画。
+このリポジトリは[geeklee/srt-whiteboard-animation](https://github.com/geeklee/srt-whiteboard-animation)を日本語対応したフォークです。原作者の著作権表示とMIT Licenseは[LICENSE](LICENSE)に記載しています。
 
-## 效果示例
+## できること
 
-**场景：猴子山抢香蕉** —— 随着字幕的叙事顺序，依次绘制假山与小猴、抢香蕉的大猴，以及围观小朋友。
+- SRTを解析し、25〜35秒を目安に幕を分ける
+- 字幕の出来事に基づいて絵コンテと画面構成案を作る
+- 画像内の領域、順序、時刻、対応字幕をJSONで管理する
+- ブラウザー上のプレビューで領域と時間を調整する
+- 線画から彩色へ進む連続筆跡でMP4を生成する
+- 複数の幕を1本の動画へ結合する
 
-![猴子山抢香蕉：SRT 白板动画演示](examples/scene-01-monkey-mountain-stream.gif)
+## 作業の流れ
 
-原始线稿：[查看 PNG](examples/scene-01-monkey-mountain.png)。
+字幕解析、線画、注釈、確認画像、最終注釈、各幕の動画、結合動画の順に作ります。各工程の完了後は必ず確認を挟みます。詳しい制約は[SKILL.md](SKILL.md)を参照してください。
 
-## 核心能力
+![SRT白板アニメーションの例](examples/scene-01-monkey-mountain-stream.gif)
 
-- 解析 SRT 字幕，并按建议的 25–35 秒时长拆分场景
-- 先输出分镜与配图策略，确保每一幕只表达一个核心意思
-- 按字幕事件而非画面坐标，为元素建立语义化的绘制顺序
-- 用 `annotation.json` 管理区域、时序、字幕关联和重叠保护区
-- 每个区域采用连续流式笔迹：先 `ink` 铺线稿，再 `color` 添彩
-- 支持浏览器预览台调整区域、顺序、时间和字幕关联
-- 支持逐幕渲染与多幕合并，输出完整 MP4
+元の線画は[こちら](examples/scene-01-monkey-mountain.png)です。
 
-## 工作方式
+## 動作環境
 
-该 Skill 的关键在于“字幕驱动、逐步确认”。每一步完成后都等待确认，避免在分镜、线稿或标注尚未定稿时浪费渲染成本：
-
-1. 解析 SRT，输出分镜与配图策略。
-2. 确认后生成统一风格的线稿。
-3. 确认线稿后，结合字幕和原图创建标注，并载入预览台。
-4. 确认标注后，生成分区与方向检查图。
-5. 在预览台调整区域、叙事顺序、时序和字幕关联并保存。
-6. 确认最终标注后，逐幕渲染 MP4。
-7. 多幕项目在确认各幕成片后合并。
-
-## 视觉规范
-
-- 暖米黄色纸张背景：建议 `#F5EBD7`
-- 深灰色素描线条，红、橙、蓝仅作少量概念性点缀
-- 极简手绘、干净背景与充足留白
-- 不使用场景文字、标签、摄影感、3D 效果或复杂纹理
-
-## 安装与环境
-
-Skill 自带独立的 Python 虚拟环境准备脚本。首次运行时执行：
+Python環境と依存パッケージをSkill内の`.venv`へ用意します。
 
 ```bash
 python scripts/prepare_env.py --check
 python scripts/prepare_env.py
 ```
 
-成功后第一条命令会输出 `ENV_PY=<路径>`；后续渲染请使用该解释器，确保依赖隔离。
+確認コマンドの最終行に表示される`ENV_PY=<パス>`を、レンダリングと結合で使います。
 
-## 项目素材结构
+## 基本コマンド
 
-```text
-assets/whiteboard/<项目名>/
-├── scene-01-<名称>.png
-├── scene-01-<名称>.annotation.json
-├── scene-01-<名称>-whiteboard.mp4
-└── scene-01-<名称>-preview.mp4
-```
-
-图片与标注必须同名，例如 `scene-01-demo.png` 对应 `scene-01-demo.annotation.json`。
-
-## 标注格式
-
-每个元素使用原图的整数像素坐标，并通过 `sequence`、`subtitle` 与 `narrativeRole` 关联字幕中的事件。区域应按“场景铺垫 → 关键人物/物体 → 动作或变化 → 反应/结果”排序。
-
-```json
-{
-  "sceneId": "scene-01",
-  "canvas": { "width": 1672, "height": 941 },
-  "storyBasis": "小猴在猴子山上拿着香蕉，大猴抢走香蕉，孩子们在旁观看。",
-  "sceneDurationMs": 9000,
-  "elements": [
-    {
-      "id": "rockery",
-      "label": "猴子山场景",
-      "sequence": 1,
-      "narrativeRole": "故事的场景铺垫",
-      "subtitle": "小猴子坐在猴子山顶，手里拿着香蕉。",
-      "type": "structure",
-      "region": { "x": 20, "y": 120, "width": 540, "height": 780 },
-      "reveal": {
-        "direction": "top_to_bottom",
-        "startMs": 300,
-        "durationMs": 2600,
-        "maskPaddingPx": 22,
-        "protectedRegions": []
-      },
-      "handPath": { "start": [290, 130], "end": [290, 890], "easing": "easeInOut" }
-    }
-  ]
-}
-```
-
-`direction` 和 `handPath` 用于预览台的矩形代理；最终成片的真实笔迹由流式绘制器自动生成。对于相互遮挡的对象，在较早元素的 `protectedRegions` 中标出需要延后显示的区域，避免后续内容提前露出。
-
-## 常用命令
-
-解析字幕并生成建议分镜：
+字幕を解析します。
 
 ```bash
 python scripts/parse_srt.py <字幕.srt> --target-sec 30 --min-sec 25 --max-sec 35
 ```
 
-生成区域检查图：
+領域確認画像を作ります。
 
 ```bash
-python scripts/render_annotation_preview.py <图片路径> <标注路径> <预览图输出路径>
+python scripts/render_annotation_preview.py <画像> <注釈JSON> <出力画像>
 ```
 
-打开 `assets/preview.html`，使用“打开文件夹”载入场景目录，即可编辑区域、顺序、时间与字幕关联。
+`assets/preview.html`をChromeまたはEdgeで開き、「フォルダーを開く」から画像と同名の注釈JSONがあるフォルダーを選ぶと、領域、順序、時刻、字幕を調整できます。
 
-渲染单幕：
+各幕をレンダリングします。
 
 ```bash
-<ENV_PY> scripts/render_stream_whiteboard.py <图片路径> <标注路径> <输出.mp4> assets/drawing-hand.png \
+<ENV_PY> scripts/render_stream_whiteboard.py <画像> <注釈JSON> <出力.mp4> assets/drawing-hand.png \
   --ink-path grid --color-fill contour-wipe
 ```
 
-合并多幕：
+複数の幕を結合します。
 
 ```bash
 <ENV_PY> scripts/merge_scenes.py --inputs 幕1.mp4 幕2.mp4 幕3.mp4 --output final.mp4
 ```
 
-## 质量检查
-
-- 首帧是干净的暖米黄纸张底色，没有提前露出的线条
-- `canvas` 与原图尺寸一致，所有区域都是画布内的整数像素坐标
-- `sequence`、`startMs` 与字幕的叙事顺序一致
-- 中段帧中，未开始区域和保护区不会提前出现
-- 笔尖贴近当前流式笔迹；线稿清晰时可选择 `--ink-path skeleton`
-- 每幕结束后至少停留 0.5 秒完整画面；多幕合并顺序与字幕分镜一致
-
-## 仓库内容
+## ファイル配置
 
 ```text
-srt-whiteboard-animation/
-├── SKILL.md                         # 完整工作流与约束
-├── assets/
-│   ├── drawing-hand.png              # 手部素材
-│   ├── preview.html                  # 本地编辑预览台
-├── examples/                         # README 案例素材
-├── scripts/
-│   ├── parse_srt.py                  # 字幕解析与分镜建议
-│   ├── render_annotation_preview.py  # 标注检查图
-│   ├── render_stream_whiteboard.py   # 流式笔迹 MP4 渲染器
-│   ├── merge_scenes.py               # 多幕合并
-│   └── prepare_env.py                # 依赖环境准备
-└── agents/openai.yaml                # Codex 元数据
+assets/whiteboard/<プロジェクト名>/
+├── scene-01-<名前>.png
+├── scene-01-<名前>.annotation.json
+├── scene-01-<名前>-whiteboard.mp4
+└── scene-01-<名前>-preview.mp4
 ```
 
-## 贡献
+画像と注釈JSONは同じ基底名にしてください。たとえば`scene-01-demo.png`には`scene-01-demo.annotation.json`を対応させます。
 
-欢迎提交 Issue 或 Pull Request。任何涉及绘制逻辑的改动，都应使用真实的字幕、标注和成片检查遮罩保护、时序与最终画面。
+## 表現上の基準
 
-## 许可证
+背景には暖かなベージュ`#F5EBD7`、線には濃い灰色を使います。赤、橙、青は控えめな差し色に限ります。場面画像には文字、写真表現、3D表現、複雑な背景を入れません。
 
-本项目基于 MIT License 开源，详见 [LICENSE](LICENSE)。
+重なった対象は`protectedRegions`で保護し、後から描く内容が先に見えないようにします。完成画面は各幕の末尾で0.5秒以上保持します。
 
-## 关于作者
+## ライセンスと原作者
 
-一个爱养鱼的老登 / AI Builder / 用 AI 团队打造一人公司。
+MIT Licenseで公開されています。著作権表示は次のとおりです。
 
-抖音、B站、公众号：江哥是老登啊
+`Copyright (c) 2026 江哥是老登啊`
+
+原作者プロフィール：一个爱养鱼的老登 / AI Builder / 用 AI 团队打造一人公司
+
+原作者の発信先：抖音、B站、公众号「江哥是老登啊」

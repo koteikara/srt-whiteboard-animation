@@ -1,22 +1,22 @@
 #!/usr/bin/env python3
 """
-SRT 白板动画 - 整合渲染器（mask 编排 + stream 画法）
+SRTホワイトボードアニメーション - 統合レンダラー（マスク構成＋連続筆跡描画）
 
-把一张线稿图 + 同名 annotation.json 渲染成白板手绘动画：
-  - 编排沿用 whiteboard-mask-animation：按 sequence/startMs 顺序逐区域揭示，
-    每个区域的可作画范围 = 矩形 region 扣除「后续区域 + protectedRegions」，
-    未开始的区域因掩码限制不会提前露线（mask 的核心不变量）。
-  - 画法换成 whiteboard-stream-animation：每个区域在自己的允许掩码内，
-    沿骨架/网格笔迹连续落墨（起笔 ink → 添彩 color），笔尖跟随真实笔迹，
-    所有区域共享同一张持久画布，已画完的区域保留在画布上。
+1枚の線画と同名のannotation.jsonから、手描き風のホワイトボードアニメーションを生成します。
+- whiteboard-mask-animationの構成を引き継ぎ、sequence/startMsの順に領域を描画します。
+  各領域の描画可能範囲は、矩形regionから後続領域とprotectedRegionsを除いた範囲です。
+  マスクにより、開始前の領域が先に表示されることはありません。
+- whiteboard-stream-animationの描画方式を使い、領域ごとのマスク内で骨格またはグリッドの
+  筆跡に沿って連続描画します（線画ink→着色color）。筆先は実際の筆跡を追い、描画済みの
+  領域は共通キャンバス上に残ります。
 
-与 mask 的矩形擦除揭示不同：这里是「笔尖沿线滑行、边走边落墨」的连贯笔迹。
-输出末行打印 OUTPUT=<路径>，便于上层捕获。
+矩形を消して表示するマスク方式とは異なり、筆先が線に沿って移動しながら描く連続筆跡です。
+呼び出し元が取得できるよう、最終行にOUTPUT=<パス>を出力します。
 
-用法：
-  <ENV_PY> render_stream_whiteboard.py <图片> <标注json> <输出mp4> [手部素材png]
-  可选参数见 --help（--ink-path / --color-fill / --pause / --total-ms 等）。
-  --total-ms 缺省时用标注里的 sceneDurationMs。
+使用方法：
+  <ENV_PY> render_stream_whiteboard.py <画像> <注釈json> <出力mp4> [手の素材png]
+オプションは--helpで確認できます（--ink-path / --color-fill / --pause / --total-msなど）。
+--total-msを省略した場合は、注釈内のsceneDurationMsを使います。
 """
 from __future__ import annotations
 
@@ -352,7 +352,7 @@ class RegionStreamRenderer:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(str(raw_path), fourcc, cfg.fps, (self.out_w, self.out_h))
         if not writer.isOpened():
-            raise RuntimeError("无法打开视频写入器")
+            raise RuntimeError("動画の書き込み先を開けません")
 
         weight_sum = cfg.ink_weight + cfg.color_weight
         cur_ms = 0.0
@@ -455,24 +455,24 @@ class RegionStreamRenderer:
 
 
 def _parse_args(argv=None):
-    p = argparse.ArgumentParser(description="SRT 白板动画整合渲染器（mask 编排 + stream 画法）")
-    p.add_argument("image", help="线稿图路径")
-    p.add_argument("annotation", help="同名 annotation.json 路径")
-    p.add_argument("output", help="输出 MP4 路径")
-    p.add_argument("hand", nargs="?", default=str(DEFAULT_HAND), help="手部素材 PNG（默认内置）")
-    p.add_argument("--total-ms", type=int, default=None, help="总时长；缺省用标注 sceneDurationMs")
-    p.add_argument("--bare-tip", action="store_true", help="不叠加笔尖/手部")
+    p = argparse.ArgumentParser(description="SRTホワイトボードアニメーション統合レンダラー（マスク構成＋連続筆跡描画）")
+    p.add_argument("image", help="線画画像のパス")
+    p.add_argument("annotation", help="同名のannotation.jsonのパス")
+    p.add_argument("output", help="出力MP4のパス")
+    p.add_argument("hand", nargs="?", default=str(DEFAULT_HAND), help="手の素材PNG（省略時は内蔵素材）")
+    p.add_argument("--total-ms", type=int, default=None, help="全体の長さ。省略時は注釈内のsceneDurationMsを使用")
+    p.add_argument("--bare-tip", action="store_true", help="筆先や手の画像を重ねない")
     p.add_argument("--ink-path", default="grid", choices=["grid", "skeleton"],
-                   help="笔迹路径: grid 网格(默认); skeleton 骨架追踪")
+                   help="筆跡経路：grid グリッド（既定）、skeleton 骨格追跡")
     p.add_argument("--color-fill", default="contour-wipe", choices=["contour-wipe", "brush"],
-                   help="上色: contour-wipe 轮廓扫描(默认); brush 沿轨迹刷")
+                   help="着色：contour-wipe 輪郭走査（既定）、brush 経路に沿って塗る")
     p.add_argument("--pause", default="heavy", choices=["heavy", "auto", "light", "off"],
-                   help="起笔段停顿节奏（预留，逐区域画法下影响较弱）")
+                   help="線画段階の間の取り方（領域別描画では影響が小さい予約設定）")
     p.add_argument("--fps", type=int, default=None)
     p.add_argument("--grid-edge", type=int, default=None)
     p.add_argument("--brush-radius", type=int, default=None)
     p.add_argument("--cap-long-edge", type=int, default=None,
-                   help="输出长边像素上限（预览可调小加速，默认 1080）")
+                   help="出力画像の長辺の上限ピクセル数（プレビューでは小さくすると高速化、既定値：1080）")
     return p.parse_args(argv)
 
 
@@ -497,20 +497,20 @@ def main(argv=None) -> int:
     cfg = _build_cfg(args)
 
     print("=" * 56)
-    print("SRT 白板动画整合渲染器 (mask 编排 + stream 画法)")
+    print("SRTホワイトボードアニメーション統合レンダラー（マスク構成＋連続筆跡描画）")
     print("=" * 56)
 
     image_bgr = sr._imread_any(args.image)
     if image_bgr is None:
-        print(f"[err] 无法读取图片: {args.image}")
+        print(f"[エラー] 画像を読み込めません：{args.image}")
         return 1
     try:
         annotation = json.loads(Path(args.annotation).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as e:
-        print(f"[err] 无法读取标注: {e}")
+        print(f"[エラー] 注釈を読み込めません：{e}")
         return 1
     if not annotation.get("elements"):
-        print("[err] 标注中没有 elements")
+        print("[エラー] 注釈にelementsがありません")
         return 1
 
     total_ms = args.total_ms if args.total_ms is not None else annotation.get("sceneDurationMs")
@@ -524,16 +524,16 @@ def main(argv=None) -> int:
 
     hand_png = Path(args.hand) if args.hand else None
     renderer = RegionStreamRenderer(image_bgr, annotation, cfg, hand_png, args.bare_tip)
-    print(f"  输入: {args.image}")
-    print(f"  输出尺寸: {renderer.out_w}x{renderer.out_h}, 帧率: {cfg.fps}")
-    print(f"  区域数: {len(annotation['elements'])}, 总时长: {total_ms}ms, "
-          f"笔迹: {cfg.ink_path_mode}, 上色: {cfg.color_fill}")
+    print(f"  入力：{args.image}")
+    print(f"  出力サイズ：{renderer.out_w}x{renderer.out_h}、フレームレート：{cfg.fps}")
+    print(f"  領域数：{len(annotation['elements'])}、全体の長さ：{total_ms}ms、"
+          f"筆跡：{cfg.ink_path_mode}、着色：{cfg.color_fill}")
 
     renderer.render_to(raw_path, total_ms)
     final = sr.transcode_h264(raw_path, out_path)
 
     size_mb = final.stat().st_size / (1024 * 1024)
-    print(f"\n最终视频: {final}  ({size_mb:.2f} MB)")
+    print(f"\n完成した動画：{final}（{size_mb:.2f} MB）")
     print("=" * 56)
     print(f"OUTPUT={final}")
     return 0
