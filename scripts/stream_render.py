@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-流式笔迹动画 - 单图渲染入口
+連続筆跡アニメーション - 1枚画像のレンダリング入口
 
-把一张彩色图片渲染成「笔尖沿连续轨迹滑行、边走边落墨」的白板动画。
-全程分三个段落：
-  起笔(ink)   笔尖沿墨迹流铺下黑色线稿
-  添彩(color) 同一条轨迹回头，笔尖换上原色把画面点亮
-  凝视(gaze)  收笔后停留，展示完整原图
+カラー画像1枚を、筆先が連続した経路を滑りながら描くホワイトボードアニメーションに変換します。
+処理は3段階です。
+  線画（ink）   筆先が筆跡に沿って黒い線画を描く
+  着色（color） 同じ経路を戻りながら元の色を加える
+  静止（gaze）  描き終えたあと、完成画像を表示したまま静止する
 
-与“逐格跳变”的做法不同：本渲染器把绘制顺序视作笔尖的运动折线，
-在相邻落点之间做插值，墨刷随笔尖滑动连续落墨，形成连贯的笔迹流。
+描画順を筆先の移動経路として扱い、隣接する描画点の間を補間します。
+筆先の動きに合わせて連続的に描画するため、滑らかな筆跡になります。
 """
 from __future__ import annotations
 
@@ -100,7 +100,7 @@ class Config:
 def _hex_to_bgr(hex_color: str) -> np.ndarray:
     digits = hex_color.lstrip("#")
     if len(digits) != 6:
-        raise ValueError(f"非法颜色值: {hex_color}")
+        raise ValueError(f"色の指定が正しくありません：{hex_color}")
     r = int(digits[0:2], 16)
     g = int(digits[2:4], 16)
     b = int(digits[4:6], 16)
@@ -122,7 +122,7 @@ def _to_grid_blocks(image: np.ndarray, edge: int) -> np.ndarray:
     image = np.ascontiguousarray(image)
     h, w = image.shape[:2]
     if h % edge or w % edge:
-        raise ValueError(f"图像尺寸 {w}x{h} 必须是 {edge} 的整数倍")
+        raise ValueError(f"画像サイズ{w}x{h}は{edge}の整数倍である必要があります")
     rows, cols = h // edge, w // edge
     if image.ndim == 2:
         return image.reshape(rows, edge, cols, edge).transpose(0, 2, 1, 3)
@@ -1688,42 +1688,42 @@ def _transcode_with_pyav(src: Path, dst: Path) -> Path:
 # ──────────────────────────────────────────────────────────────
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     p = argparse.ArgumentParser(
-        description="把一张图片渲染成流式笔迹白板动画视频"
+        description="1枚の画像から連続筆跡のホワイトボードアニメーション動画を生成します"
     )
-    p.add_argument("image", help="输入图片路径 (PNG/JPG/JPEG/BMP/TIFF)")
-    p.add_argument("--out-dir", default="./out", help="输出目录 (默认: ./out)")
-    p.add_argument("--total-ms", type=int, default=10000, help="视频总时长，单位毫秒 (默认: 10000)")
-    p.add_argument("--bare-tip", action="store_true", help="不叠加笔尖/手部覆盖")
+    p.add_argument("image", help="入力画像のパス（PNG/JPG/JPEG/BMP/TIFF）")
+    p.add_argument("--out-dir", default="./out", help="出力先ディレクトリ（既定値：./out）")
+    p.add_argument("--total-ms", type=int, default=10000, help="動画全体の長さ（ミリ秒、既定値：10000）")
+    p.add_argument("--bare-tip", action="store_true", help="筆先や手の画像を重ねない")
     p.add_argument(
         "--pen-image", default=str(DEFAULT_HAND_PNG),
-        help="自定义笔尖/手部素材路径 (默认: skill 内置 drawing-hand.png)",
+        help="筆先または手の素材のパス（既定値：Skill内蔵のdrawing-hand.png）",
     )
-    p.add_argument("--fps", type=int, default=None, help="覆盖默认帧率")
-    p.add_argument("--grid-edge", type=int, default=None, help="覆盖默认网格边长")
-    p.add_argument("--brush-radius", type=int, default=None, help="覆盖默认墨刷半径")
+    p.add_argument("--fps", type=int, default=None, help="既定のフレームレートを上書き")
+    p.add_argument("--grid-edge", type=int, default=None, help="既定のグリッド辺長を上書き")
+    p.add_argument("--brush-radius", type=int, default=None, help="既定のブラシ半径を上書き")
     p.add_argument(
         "--color-fill", default="contour-wipe", choices=["brush", "contour-wipe"],
-        help="添彩阶段上色风格: contour-wipe 轮廓感知自上而下扫描 (默认); brush 沿笔画轨迹刷",
+        help="着色方式：contour-wipe 輪郭を検出して上から下へ走査（既定）、brush 筆跡に沿って塗る",
     )
     p.add_argument(
         "--wipe-decay", type=float, default=None,
-        help="contour-wipe: 阻力场逐行向下衰减系数 (默认 0.86，越小越快越过轮廓)",
+        help="contour-wipe：抵抗場の行ごとの減衰係数（既定値：0.86、小さいほど輪郭を速く通過）",
     )
     p.add_argument(
         "--wipe-delay-ratio", type=float, default=None,
-        help="contour-wipe: 轮廓处前沿扣减比例×h (默认 0.04，越大轮廓处停留越久)",
+        help="contour-wipe：輪郭で描画前線を遅らせる比率×h（既定値：0.04、大きいほど輪郭で長く停止）",
     )
     p.add_argument(
         "--wipe-blocks", type=int, default=None,
-        help="contour-wipe: 笔尖横向来回扫动趟数 (默认 18)",
+        help="contour-wipe：筆先を左右に往復させる回数（既定値：18）",
     )
     p.add_argument(
         "--pause", default="heavy", choices=["auto", "off", "light", "heavy"],
-        help="起笔段停顿节奏: heavy 明显(默认); auto 按密度自动分档; off 关闭; light 少量",
+        help="線画段階の休止：heavy 明確（既定）、auto 密度に応じて自動調整、off 無効、light 少なめ",
     )
     p.add_argument(
         "--ink-path", default="grid", choices=["grid", "skeleton"],
-        help="起笔段笔迹路径: grid 网格格中心插值(默认); skeleton 骨架级像素追踪(更精准贴合线条)",
+        help="線画段階の筆跡経路：grid グリッド中心を補間（既定）、skeleton 骨格をピクセル単位で追跡",
     )
     return p.parse_args(argv)
 
@@ -1756,12 +1756,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     cfg = _build_cfg(args)
 
     print("=" * 56)
-    print("流式笔迹动画渲染器")
+    print("連続筆跡アニメーションレンダラー")
     print("=" * 56)
 
     image_bgr = _imread_any(args.image)
     if image_bgr is None:
-        print(f"[err] 无法读取图片: {args.image}")
+        print(f"[エラー] 画像を読み込めません：{args.image}")
         return 1
 
     out_dir = Path(args.out_dir)
@@ -1772,17 +1772,17 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     pen_png = Path(args.pen_image) if args.pen_image else None
     renderer = StreamBoardRenderer(image_bgr, cfg, pen_png, args.bare_tip)
-    print(f"  输入: {args.image}")
-    print(f"  输出尺寸: {renderer.out_w}x{renderer.out_h}, 帧率: {cfg.fps}")
+    print(f"  入力：{args.image}")
+    print(f"  出力サイズ：{renderer.out_w}x{renderer.out_h}、フレームレート：{cfg.fps}")
 
     renderer.render_to(raw_path, args.total_ms)
     final = transcode_h264(raw_path, h264_path)
 
     size_mb = final.stat().st_size / (1024 * 1024)
-    print(f"\n最终视频: {final}")
-    print(f"  文件大小: {size_mb:.2f} MB")
+    print(f"\n完成した動画：{final}")
+    print(f"  ファイルサイズ：{size_mb:.2f} MB")
     print("=" * 56)
-    print("完成")
+    print("完了しました")
     # 末行输出最终路径，便于上层捕获
     print(f"OUTPUT={final}")
     return 0
