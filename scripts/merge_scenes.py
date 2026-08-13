@@ -15,6 +15,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from fractions import Fraction
 from pathlib import Path
 
 
@@ -68,11 +69,18 @@ def _pyav_concat(inputs: list[Path], output: Path) -> bool:
     ostream.width, ostream.height = w, h
     ostream.pix_fmt = "yuv420p"
     ostream.options = {"crf": "24", "preset": "medium"}
+    frame_index = 0
+    frame_time_base = Fraction(rate.denominator, rate.numerator)
     for p in inputs:
         cont = av.open(str(p))
         for frame in cont.decode(video=0):
             if frame.width != w or frame.height != h:
                 frame = frame.reformat(width=w, height=h)
+            # 入力ごとのPTSは先頭へ戻るため、そのまま渡すと2本目以降で
+            # DTSが逆行する。出力全体で連続する時刻へ振り直す。
+            frame.pts = frame_index
+            frame.time_base = frame_time_base
+            frame_index += 1
             for pkt in ostream.encode(frame):
                 out.mux(pkt)
         cont.close()

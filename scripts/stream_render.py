@@ -37,9 +37,9 @@ DEFAULT_HAND_PNG = _ASSETS_DIR / "drawing-hand.png"
 
 def _imread_any(path: str | Path, flags: int = cv2.IMREAD_COLOR) -> np.ndarray | None:
     """
-    读取图片，兼容含中文/空格等非 ASCII 字符的 Windows 路径。
-    先用 np.fromfile 读字节，再交给 cv2.imdecode 解码，
-    绕过 cv2.imread 对非 ASCII 路径的兼容性问题。
+    日本語や空白などの非ASCII文字を含むWindowsパスから画像を読み込む。
+    np.fromfileでバイト列を読み、cv2.imdecodeへ渡すことで、
+    cv2.imreadの非ASCIIパスに関する互換性問題を回避する。
     """
     raw = np.fromfile(str(path), dtype=np.uint8)
     if raw.size == 0:
@@ -118,7 +118,7 @@ def _bounding_box(mask: np.ndarray) -> tuple[tuple[int, int], tuple[int, int]]:
 # 墨迹格分块
 # ──────────────────────────────────────────────────────────────
 def _to_grid_blocks(image: np.ndarray, edge: int) -> np.ndarray:
-    """把 HxW（x C）图像切成 (行数, 列数, edge, edge[, C]) 的分块视图。"""
+    """HxW（x C）画像を（行数, 列数, edge, edge[, C]）のブロック表示へ分割する。"""
     image = np.ascontiguousarray(image)
     h, w = image.shape[:2]
     if h % edge or w % edge:
@@ -130,7 +130,7 @@ def _to_grid_blocks(image: np.ndarray, edge: int) -> np.ndarray:
 
 
 def _active_mask(threshold_map: np.ndarray, edge: int, threshold: int) -> np.ndarray:
-    """哪些网格含墨迹：块内存在灰度低于阈值的像素即为真。"""
+    """しきい値より暗い画素を含むグリッドを描画対象として返す。"""
     blocks = _to_grid_blocks(threshold_map, edge)
     return np.any(blocks < threshold, axis=(2, 3))
 
@@ -139,7 +139,7 @@ def _active_mask(threshold_map: np.ndarray, edge: int, threshold: int) -> np.nda
 # 墨迹流聚类 + 密度梯度游走
 # ──────────────────────────────────────────────────────────────
 def _label_components(active: np.ndarray) -> tuple[np.ndarray, int]:
-    """对墨迹格做 8 连通连通域标记，返回 (标签图, 域数)。"""
+    """描画セルを8近傍でラベル付けし、（ラベル画像, 領域数）を返す。"""
     n, labels = cv2.connectedComponents(active.astype(np.uint8), connectivity=8)
     return labels, n - 1  # 去掉背景标签 0
 
@@ -154,9 +154,9 @@ def _merge_small_components(
     merge_threshold: int,
 ) -> list[list[tuple[int, int]]]:
     """
-    把小连通域（格数 ≤ merge_threshold）合并到空间最近的大连通域。
-    避免大量 1-2 格的碎片穿插在大块文字之间，导致“画一块字没画完就跳走”。
-    若没有大连通域可并入，则保留原样（不丢弃任何墨迹）。
+    小さな連結領域（セル数 ≤ merge_threshold）を、空間的に最も近い大領域へ統合する。
+    1～2セルの断片が大きな文字領域の描画を中断するのを防ぐ。
+    統合先となる大領域がなければ、線を失わないよう元の状態を保つ。
     """
     if not components:
         return components
@@ -350,7 +350,7 @@ def classify_stroke_groups(
 
 
 def _density_seed(cells: Sequence[tuple[int, int]], radius: int = 2) -> tuple[int, int]:
-    """挑局部邻居最密的格子作为起笔点，模拟“从墨最浓处下笔”。"""
+    """近傍が最も密なセルを始点に選び、線が集中する場所から描き始める。"""
     cell_set = set(cells)
     best = cells[0]
     best_score = -1
@@ -369,10 +369,10 @@ def _density_seed(cells: Sequence[tuple[int, int]], radius: int = 2) -> tuple[in
 
 def _gradient_walk(cells: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
     """
-    密度梯度引导的贪心游走：从密度最高的种子格出发，每步选择
-    “未访问邻居中局部密度最高、且与来向夹角最小”的格子，
-    形成“尽量沿着墨迹、少折返”的连续笔迹。
-    无邻居可达时跳到全局最近的未访问格继续。
+    密度勾配に基づく貪欲探索。密度が最も高いセルから始め、
+    未訪問の近傍から局所密度が高く、進行方向との差が小さいセルを選ぶ。
+    線に沿って折り返しの少ない連続筆跡を作り、近傍が尽きたら
+    全体で最も近い未訪問セルへ移る。
     """
     if not cells:
         return []
@@ -431,7 +431,7 @@ def _gradient_walk(cells: Sequence[tuple[int, int]]) -> list[tuple[int, int]]:
 def _nearest_neighbor_order(
     cells: Sequence[tuple[int, int]], seed: tuple[int, int]
 ) -> list[tuple[int, int]]:
-    """从 seed 出发，每步走最近的未访问格，形成连续笔迹。"""
+    """seedから最寄りの未訪問セルを順にたどり、連続筆跡を作る。"""
     if not cells:
         return []
     remaining = list(cells)
@@ -454,10 +454,10 @@ def _text_scan_order(
     cells: Sequence[tuple[int, int]], segment_cols: int = 4
 ) -> list[tuple[int, int]]:
     """
-    文字区域的专用画法：横向按段扫描，模拟写字。
-    把格子按列切成若干段（每段 segment_cols 列宽），段间按列从左到右；
-    段内用最近邻沿墨迹连续走（而非栅栏式逐行扫），避免“画过一块没画满、
-    跳到下一段又从顶部开始”的回头补笔感。
+    文字領域向けに、水平方向を区切って筆記を再現する。
+    セルをsegment_cols列ごとの区間に分け、左から右へ処理する。
+    区間内は行単位の走査ではなく線に沿って最寄りセルをたどり、
+    描き残しへ戻るような不自然な筆運びを抑える。
     """
     if not cells:
         return []
@@ -492,7 +492,7 @@ def _text_scan_order(
 def _order_stream_by_kind(
     kind: str, cells: list[tuple[int, int]]
 ) -> list[tuple[int, int]]:
-    """按区域类型选画法：文字横向按段扫，主体/轮廓走密度游走。"""
+    """領域種別に応じ、文字は区間走査、主体と輪郭は密度探索で描く。"""
     if kind == "text":
         return _text_scan_order(cells)
     return _gradient_walk(cells)
@@ -532,10 +532,9 @@ def _chain_region_paths(
 
 def cluster_ink_streams(active: np.ndarray) -> list[list[tuple[int, int]]]:
     """
-    把墨迹格按语义聚成若干条墨流：主体(subject) → 文字(text) → 局部轮廓(contour)，
-    每条内部按类型选画法（文字按段扫、其余密度游走）；
-    墨流之间按“出口到入口最近邻”动态串联，必要时整条反向，减少跳笔。
-    返回的是已串联排序好的多条笔迹流。
+    描画セルを主体（subject）、文字（text）、局所輪郭（contour）の筆跡群へまとめる。
+    各群は種別に応じた方式で並べ、群同士は出口から最寄りの入口へつなぐ。
+    必要なら群全体を反転して筆先の飛びを減らし、並べ替え済みの筆跡群を返す。
     """
     if not active.any():
         return []
@@ -585,9 +584,9 @@ def flatten_streams(streams: list[list[tuple[int, int]]]) -> list[tuple[int, int
 # ──────────────────────────────────────────────────────────────
 def _load_hand(path: Path, target_h: int) -> tuple[np.ndarray, np.ndarray] | None:
     """
-    读入手部素材并按目标高度等比缩放。
-    优先用 alpha 通道做蒙版；无 alpha 时回退到“近白即背景”检测。
-    返回 (手部BGR, 归一化蒙版[0..1])，失败返回 None。
+    手の素材を読み込み、指定した高さへ縦横比を保って拡大縮小する。
+    アルファチャンネルを優先してマスクに使い、なければ白に近い画素を背景とみなす。
+    （手のBGR画像, 0～1の正規化マスク）を返し、失敗時はNoneを返す。
     """
     if not path.exists():
         return None
@@ -624,8 +623,8 @@ def _load_hand(path: Path, target_h: int) -> tuple[np.ndarray, np.ndarray] | Non
 
 def _procedural_tip(target_h: int) -> tuple[np.ndarray, np.ndarray]:
     """
-    兜底笔尖：程序化画一支记号笔（笔杆渐变 + 圆头柔边 + 落影）。
-    不依赖任何外部图片，素材缺失时也能出图。
+    代替用のマーカーを、軸のグラデーション、丸い穂先、影から生成する。
+    外部画像に依存しないため、素材がなくても描画できる。
     """
     w = max(1, int(target_h * 0.34))
     h = target_h
@@ -661,7 +660,7 @@ def _procedural_tip(target_h: int) -> tuple[np.ndarray, np.ndarray]:
 
 
 class TipOverlay:
-    """把笔尖/手部贴到画布上，让指定的“笔尖锚点”对齐落墨点，带 alpha 混合。"""
+    """筆先の基準点を描画位置へ合わせ、筆先または手をアルファ合成する。"""
 
     def __init__(
         self,
@@ -680,7 +679,7 @@ class TipOverlay:
         self.tip_py = int(round((self.h - 1) * np.clip(tip_anchor_y, 0.0, 1.0)))
 
     def stamp(self, canvas: np.ndarray, x: int, y: int) -> np.ndarray:
-        """让素材的笔尖锚点对齐到画布坐标 (x, y)（即落墨点）。"""
+        """素材の筆先基準点をキャンバス座標（x, y）の描画位置へ合わせる。"""
         # 素材左上角 = 落墨点 - 笔尖偏移
         anchor_x = x - self.tip_px
         anchor_y = y - self.tip_py
@@ -715,7 +714,7 @@ class TipOverlay:
 # 墨刷
 # ──────────────────────────────────────────────────────────────
 def _feathered_disk(radius: int) -> np.ndarray:
-    """生成半径 r、边缘高斯羽化的圆形蒙版，值域 0..1。"""
+    """半径r、周縁をガウスぼかしした0～1の円形マスクを生成する。"""
     y, x = np.ogrid[-radius:radius + 1, -radius:radius + 1]
     dist = np.sqrt(x * x + y * y).astype(np.float32)
     return np.clip(1.0 - (dist - radius * 0.75) / (radius * 0.25), 0.0, 1.0)
@@ -725,14 +724,14 @@ def _feathered_disk(radius: int) -> np.ndarray:
 # contour-wipe 上色工具
 # ──────────────────────────────────────────────────────────────
 def _ease_in_out_sine(t: float | np.ndarray) -> float | np.ndarray:
-    """正弦缓动：起止慢、中间快。输入标量或数组，输出同形。"""
+    """始端と終端が遅く中央が速い正弦イージングを、入力と同じ形で返す。"""
     return -(np.cos(np.pi * t) - 1.0) / 2.0
 
 
 def _build_wipe_wave(width: int) -> np.ndarray:
     """
-    预计算双频正弦波边界，让揭示前沿不是平直线而是水波起伏。
-    返回 (W,) float32 数组，值域大致 [-1.35, 1.35]。
+    二周波の正弦波境界を事前計算し、表示前線に水面のような揺らぎを加える。
+    およそ-1.35～1.35の（W,）float32配列を返す。
     """
     wave_px1 = max(24.0, width / 20.0)
     wave_px2 = max(8.0, width / 72.0)
@@ -753,9 +752,8 @@ _SKEL_NEIGHBORS_8 = [
 
 def _zhang_suen_skeleton(mask: np.ndarray, max_iterations: int = 160) -> np.ndarray:
     """
-    Zhang-Suen 两子迭代细化，把二值前景掩码细化到 1px 宽骨架。
-    输入：bool/uint8 二维数组（True/1 = 前景笔迹）。
-    输出：bool 骨架图，同形。
+    Zhang-Suenの2段階反復で、二値の前景マスクを1px幅の骨格へ細線化する。
+    入力はbool/uint8の2次元配列（True/1が前景の線）、出力は同じ形のbool骨格画像。
     """
     img = np.pad(mask.astype(np.uint8), 1, mode="constant")
     for _ in range(max_iterations):
@@ -793,9 +791,9 @@ def _zhang_suen_skeleton(mask: np.ndarray, max_iterations: int = 160) -> np.ndar
 
 def _skel_neighbors(skel: np.ndarray, point: tuple[int, int]) -> list[tuple[int, int]]:
     """
-    返回骨架点 point 的有效 8 邻接邻居。
-    关键：当对角邻居与当前点之间已有正交桥时，跳过该对角邻居，
-    避免 T 型/十字交叉处的三角形碎笔画，同时保留真正的纯对角中心线。
+    骨格点pointの有効な8近傍を返す。
+    斜め近傍との間に直交する接続がある場合はその斜め近傍を除き、
+    T字・十字交差の三角形状の断片を防ぎつつ、純粋な斜線は残す。
     """
     x, y = point
     h, w = skel.shape
@@ -811,7 +809,7 @@ def _skel_neighbors(skel: np.ndarray, point: tuple[int, int]) -> list[tuple[int,
 
 
 def _edge_key(a: tuple[int, int], b: tuple[int, int]) -> tuple[tuple[int, int], tuple[int, int]]:
-    """无向边规范化：(A,B) 和 (B,A) 映射到同一个 key。"""
+    """無向辺（A, B）と（B, A）を同じキーへ正規化する。"""
     return (a, b) if a <= b else (b, a)
 
 
@@ -822,8 +820,8 @@ def _choose_next(
     visited_edges: set,
 ) -> tuple[int, int] | None:
     """
-    在交叉点选择"最直的未访问边"继续走。
-    用当前行进方向与候选方向的余弦相似度衡量"直度"，取最大值。
+    交差点では、未訪問の辺のうち最も直進に近いものを選ぶ。
+    現在の進行方向と候補方向のコサイン類似度を直進度として最大値を採用する。
     """
     fresh = [p for p in candidates if _edge_key(cur, p) not in visited_edges and p != prev]
     if not fresh:
@@ -841,15 +839,15 @@ def _choose_next(
 
 def trace_8connected(skel: np.ndarray, min_points: int = 8) -> list[list[tuple[int, int]]]:
     """
-    把 1px 骨架追踪成有序笔画序列。
+    1px幅の骨格を順序付き筆画列へ変換する。
 
-    - 起点优先级：度=1 的端点 → 度>2 的交叉点 → 其他
-    - 交叉点处沿最直的未访问边继续走（而非每分支断成短笔画）
-    - 用无向边集合标记访问（像素可复用，边不可重复走）
-    - 死胡同（无 fresh 边）即停，剩余分支由后续起点补上
-    - 长度 < min_points 的碎片丢弃
+    - 始点の優先順位：次数1の端点 → 次数2超の交差点 → その他
+    - 交差点では最も直進に近い未訪問辺をたどる
+    - 無向辺の集合で訪問済みを管理し、画素の再利用は許しても辺は重複しない
+    - 未訪問辺がない行き止まりで停止し、残りの分岐は後続の始点から補う
+    - 長さがmin_points未満の断片は除く
 
-    返回 list[list[(x,y)]]，每条是沿笔画方向的有序像素坐标。
+    各筆画方向に並んだ画素座標をlist[list[(x, y)]]で返す。
     """
     ys, xs = np.nonzero(skel)
     points = [(int(x), int(y)) for x, y in zip(xs, ys)]
@@ -885,7 +883,7 @@ def trace_8connected(skel: np.ndarray, min_points: int = 8) -> list[list[tuple[i
 
 # ── 骨架笔画后处理（重采样 + 平滑 + 排序）──
 def _stroke_cumulative_length(points: list[tuple[float, float]]) -> list[float]:
-    """每个点的累计弧长 [0, d01, d012, ...]。"""
+    """各点までの累積弧長[0, d01, d012, ...]を返す。"""
     cum = [0.0]
     for a, b in zip(points, points[1:]):
         cum.append(cum[-1] + math.hypot(b[0] - a[0], b[1] - a[1]))
@@ -895,7 +893,7 @@ def _stroke_cumulative_length(points: list[tuple[float, float]]) -> list[float]:
 def _resample_stroke_points(
     points: list[tuple[float, float]], spacing: float
 ) -> list[tuple[float, float]]:
-    """沿弧长按 spacing 等距重采样，去像素锯齿。"""
+    """弧長に沿ってspacing間隔で再標本化し、画素のギザギザを抑える。"""
     if len(points) < 2:
         return list(points)
     cum = _stroke_cumulative_length(points)
@@ -929,7 +927,7 @@ def _resample_stroke_points(
 def _chaikin_smooth(
     points: list[tuple[float, float]], iterations: int = 1
 ) -> list[tuple[float, float]]:
-    """Chaikin 切角平滑：每段用 0.25/0.75 两点替换，起止点保留。"""
+    """Chaikinの角切りで各区間を0.25/0.75点へ置き換え、両端は保持する。"""
     pts = list(points)
     for _ in range(iterations):
         if len(pts) < 3:
@@ -945,8 +943,8 @@ def _chaikin_smooth(
 
 def _order_skeleton_strokes(strokes: list[list[tuple[float, float]]]) -> list[list[tuple[float, float]]]:
     """
-    笔画排序：从上到下、从左到右，长笔优先。
-    简化版①order_strokes——用包围盒左上角 + 负长度做字典序。
+    筆画を上から下、左から右、長いもの優先で並べる。
+    簡易版のorder_strokesとして、境界矩形の左上と負の長さで辞書順にする。
     """
     def sort_key(s):
         if not s:
@@ -971,9 +969,9 @@ class PhasePlan:
 
 def plan_phases(total_ms: int, cfg: Config) -> PhasePlan:
     """
-    把总时长切成 起笔/添彩/凝视 三段。
-    凝视段先用基准秒数占位，剩余时长按权重分给起笔与添彩；
-    若剩余无法被权重和整除，余数补给凝视段，避免精度丢失。
+    全体の長さを線画、着色、静止の3工程へ分ける。
+    静止工程を基準秒数で確保し、残りを重みに応じて線画と着色へ配分する。
+    端数は静止工程へ加え、時間の丸め誤差を防ぐ。
     """
     weight_sum = cfg.ink_weight + cfg.color_weight
     gaze_ms = int(cfg.gaze_seconds * 1000)
@@ -995,7 +993,7 @@ def plan_phases(total_ms: int, cfg: Config) -> PhasePlan:
 # 渲染器主体
 # ──────────────────────────────────────────────────────────────
 class StreamBoardRenderer:
-    """持有单次渲染的全部状态，方法挂在实例上。"""
+    """1回のレンダリングに必要な状態を保持する。"""
 
     def __init__(
         self,
@@ -1072,9 +1070,9 @@ class StreamBoardRenderer:
     # ── 把原图背景染成画布底色（仅影响 color_img，不碰线稿墨迹）──
     def _match_original_background(self) -> None:
         """
-        采样原图四角作为背景色基准，把与其差异 < 阈值的像素替换为 canvas_hex。
-        使上色/凝视阶段的背景与起笔(线稿)阶段一致，避免背景色突兀跳变。
-        彩色内容（与背景差异大）保留原色不受影响。
+        原画像の四隅を背景色の基準として採取し、差がしきい値未満の画素をcanvas_hexへ置き換える。
+        着色・静止工程の背景を線画工程とそろえ、急な背景色の変化を防ぐ。
+        背景との差が大きい色付きの内容は元の色を保つ。
         """
         img = self.color_img
         h, w = img.shape[:2]
@@ -1097,15 +1095,14 @@ class StreamBoardRenderer:
     # ── 骨架级笔迹路径（Zhang-Suen 细化 + 8邻接最直边追踪）──
     def _build_skeleton_path(self) -> list[list[tuple[int, int]]]:
         """
-        用骨架追踪生成像素级有序笔画序列，替代网格格中心插值。
-        笔尖走真实骨架，比网格中心更贴合原图线条；
-        交叉点处沿最直边继续走，避免三角碎笔画。
+        骨格追跡で画素単位の順序付き筆画列を作り、グリッド中心の補間経路と置き換える。
+        筆先を実際の骨格に沿わせ、交差点では最も直進に近い辺を選んで断片を防ぐ。
         """
         cfg = self.cfg
         skel = _zhang_suen_skeleton(self.ink_pixels, max_iterations=160)
         raw_strokes = trace_8connected(skel, min_points=cfg.skeleton_min_points)
         if not raw_strokes:
-            print("  [warn] 骨架追踪无笔画，回退到格中心路径")
+            print("  [警告] 骨格を追跡できなかったため、グリッド中心の経路を使用します")
             return []
 
         spacing = cfg.skeleton_resample_spacing
@@ -1120,16 +1117,16 @@ class StreamBoardRenderer:
 
         processed = _order_skeleton_strokes(processed)
         total_pts = sum(len(s) for s in processed)
-        print(f"  骨架追踪: {len(processed)} 条笔画, {total_pts} 个采样点")
+        print(f"  骨格追跡：{len(processed)}筆画、{total_pts}サンプル点")
         return processed
 
     # ── contour-wipe 阻力场（懒构建，整个上色阶段复用）──
     def _build_resistance_field(self) -> np.ndarray:
         """
-        用线稿墨迹构建"阻力场"：轮廓处阻力≈1，向下方逐行按 decay 指数衰减。
-        揭示前沿遇高阻力被扣减像素数，从而"先卡在轮廓上、再缓慢越过"。
+        線画から抵抗場を作る。輪郭の抵抗を約1とし、下方向へ行ごとにdecayで指数減衰させる。
+        表示前線は抵抗に応じて遅れ、輪郭でいったん止まってから緩やかに越える。
 
-        阻力场全程静态，与上色进度无关，故只算一次缓存到 self._resistance。
+        抵抗場は着色の進行に依存しないため、一度だけ計算してself._resistanceへ保持する。
         """
         if getattr(self, "_resistance", None) is not None:
             return self._resistance
@@ -1217,14 +1214,14 @@ class StreamBoardRenderer:
         self, path: list[tuple[int, int]]
     ) -> tuple[list[tuple[int, int]], set[int], list[int]]:
         """
-        把笔迹折线插值成连续的笔尖像素坐标序列。
-        相邻格中心之间按 sample_step 像素均匀采样，形成连贯的滑动轨迹。
+        筆跡の折れ線を、連続する筆先の画素座標列へ補間する。
+        隣接セルの中心間をsample_step画素ごとに採取し、滑らかな移動経路を作る。
 
-        返回 (samples, pen_lifts, sample_cell_index)：
-          samples         —— 笔尖像素坐标列表
-          pen_lifts       —— “抬笔”采样点索引集合（非相邻格切换处）
-          sample_cell_index —— 每个采样点归属的 cell 在 path 中的索引，
-                              用于让“揭墨进度”与“笔尖位置”严格同步。
+        （samples, pen_lifts, sample_cell_index）を返す。
+          samples：筆先の画素座標一覧
+          pen_lifts：筆を上げるサンプル点のインデックス集合
+          sample_cell_index：各サンプル点に対応するpath内のセル位置。
+          線の表示進行と筆先位置を正確に同期するために使う。
         """
         samples: list[tuple[int, int]] = []
         pen_lifts: set[int] = set()
@@ -1256,10 +1253,9 @@ class StreamBoardRenderer:
 
     def _frame_progress_indices(self, n_steps: int, target_frames: int) -> list[int]:
         """
-        给定 n_steps 个笔尖位置和 target_frames 个目标帧，
-        返回每个目标帧应取的笔尖位置索引（均匀映射，覆盖完整轨迹）。
-        target_frames <= n_steps 时是下采样，> 时是重复采样。
-        target_frames <= 0（如总时长≤凝视段导致本段无帧）时返回空，不产生任何帧。
+        n_steps個の筆先位置をtarget_frames枚へ均等に割り当て、各フレームの位置インデックスを返す。
+        target_framesがn_steps以下なら間引き、超える場合は重複して採取する。
+        target_framesが0以下なら空を返し、フレームを生成しない。
         """
         if n_steps == 0 or target_frames <= 0:
             return []
@@ -1274,14 +1270,13 @@ class StreamBoardRenderer:
         self, target_frames: int, n_cells: int
     ) -> set[int]:
         """
-        自适应停顿：按内容密度分档决定停顿比例，再把停顿帧均匀分布在时间轴上。
-        返回"需要冻结（重复上一帧进度）"的帧索引集合。
+        内容密度から休止率を決め、休止フレームを時間軸へ均等に配置する。
+        直前の進行状態を維持するフレームのインデックス集合を返す。
 
-        分档指标用"每格帧数" frames_per_cell = target_frames / n_cells：
-        帧比格多得多（值大）说明动画时长相对内容有富余 → 多停顿模拟换笔呼吸；
-        帧比格少（值小）说明内容密集、时长紧张 → 不停顿。
+        判定にはセル当たりフレーム数frames_per_cell = target_frames / n_cellsを使う。
+        値が大きければ休止を増やし、値が小さければ休止を入れない。
 
-        pause_mode 可强制覆盖："off" 关闭、"light"/"heavy" 固定档、"auto" 自动。
+        pause_modeではoff、light、heavy、autoを指定できる。
         """
         mode = self.cfg.pause_mode
         if mode == "off" or target_frames < 8 or n_cells <= 0:
@@ -1318,7 +1313,7 @@ class StreamBoardRenderer:
 
     # ── 起笔段：沿 stroke_path 铺线稿，笔尖滑动且与揭墨严格同步 ──
     def lay_down_ink(self, writer: cv2.VideoWriter, target_frames: int) -> None:
-        """起笔段入口：按 ink_path_mode 分发到骨架追踪或网格格路径。"""
+        """ink_path_modeに応じて、線画工程を骨格追跡またはグリッド経路へ振り分ける。"""
         if self.cfg.ink_path_mode == "skeleton" and self.skeleton_strokes:
             return self._lay_down_ink_skeleton(writer, target_frames)
         return self._lay_down_ink_grid(writer, target_frames)
@@ -1328,7 +1323,7 @@ class StreamBoardRenderer:
         path = self.stroke_path
         n = len(path)
         if n == 0:
-            print("  无墨迹，跳过起笔段")
+            print("  描画対象の線がないため、線画工程を省略します")
             for _ in range(target_frames):
                 writer.write(self._snapshot_with_tip(self.out_w // 2, self.out_h // 2))
             return
@@ -1340,7 +1335,7 @@ class StreamBoardRenderer:
         # 模拟真人书写时的换笔/呼吸节奏。
         pause_frames = self._pause_frame_indices(target_frames, n)
         if pause_frames:
-            print(f"  自适应停顿: {len(pause_frames)} 帧冻结 (模式={self.cfg.pause_mode})")
+            print(f"  自動休止：{len(pause_frames)}フレーム停止（モード：{self.cfg.pause_mode}）")
 
         written = 0
         cells_revealed = 0  # 已整块揭示的格数（增量，严格跟随笔尖进度）
@@ -1352,7 +1347,7 @@ class StreamBoardRenderer:
                 writer.write(self._snapshot_with_tip(sx, sy))
                 written += 1
                 if (fi + 1) % max(1, target_frames // 10) == 0:
-                    print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                    print(f"  線画の進行状況：{int((fi + 1) / target_frames * 100)}%")
                 continue
 
             # 笔尖沿线揭示（保留笔迹流动感）
@@ -1378,7 +1373,7 @@ class StreamBoardRenderer:
             written += 1
             last_sample_idx = si
             if (fi + 1) % max(1, target_frames // 10) == 0:
-                print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                print(f"  線画の進行状況：{int((fi + 1) / target_frames * 100)}%")
 
         # 收尾兜底：确保所有格墨迹揭示完整，并补齐帧数
         while cells_revealed < n:
@@ -1388,14 +1383,13 @@ class StreamBoardRenderer:
         while written < target_frames:
             writer.write(self._snapshot_with_tip(*last))
             written += 1
-        print(f"  起笔完成: {n} 格, {written} 帧")
+        print(f"  線画完了：{n}セル、{written}フレーム")
 
     # ── skeleton 模式：沿骨架像素路径揭墨（笔尖走真实骨架）──
     def _lay_down_ink_skeleton(self, writer: cv2.VideoWriter, target_frames: int) -> None:
         """
-        骨架模式起笔：笔尖沿骨架像素点滑动，用 _reveal_ink_segment 揭原图墨迹。
-        不做整块揭示（_ink_stamp），因为骨架已精确到像素，无需保证格完整。
-        跨笔画处标记抬笔（pen_lifts），跳过插值。
+        骨格方式では筆先を骨格画素に沿って動かし、_reveal_ink_segmentで元画像の線を表示する。
+        骨格は画素単位なのでセル全体の表示は行わず、筆画間はpen_liftsで補間を省く。
         """
         strokes = self.skeleton_strokes
         if not strokes:
@@ -1411,7 +1405,7 @@ class StreamBoardRenderer:
 
         n = len(samples)
         if n == 0:
-            print("  无骨架笔画，跳过起笔段")
+            print("  骨格筆画がないため、線画工程を省略します")
             for _ in range(target_frames):
                 writer.write(self._snapshot_with_tip(self.out_w // 2, self.out_h // 2))
             return
@@ -1421,7 +1415,7 @@ class StreamBoardRenderer:
         # 自适应停顿（用笔画数而非格数做密度判定）
         pause_frames = self._pause_frame_indices(target_frames, len(strokes))
         if pause_frames:
-            print(f"  自适应停顿: {len(pause_frames)} 帧冻结 (模式={self.cfg.pause_mode})")
+            print(f"  自動休止：{len(pause_frames)}フレーム停止（モード：{self.cfg.pause_mode}）")
 
         written = 0
         last_sample_idx: int | None = None
@@ -1433,7 +1427,7 @@ class StreamBoardRenderer:
                 writer.write(self._snapshot_with_tip(sx, sy))
                 written += 1
                 if (fi + 1) % report_step == 0:
-                    print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                    print(f"  線画の進行状況：{int((fi + 1) / target_frames * 100)}%")
                 continue
 
             # 沿骨架揭墨：从上一帧采样点到当前帧采样点，逐段揭示原图墨迹
@@ -1450,14 +1444,14 @@ class StreamBoardRenderer:
             written += 1
             last_sample_idx = si
             if (fi + 1) % report_step == 0:
-                print(f"  起笔进度: {int((fi + 1) / target_frames * 100)}%")
+                print(f"  線画の進行状況：{int((fi + 1) / target_frames * 100)}%")
 
         # 收尾兜底：补齐帧数
         last = samples[-1]
         while written < target_frames:
             writer.write(self._snapshot_with_tip(*last))
             written += 1
-        print(f"  起笔完成(骨架): {n} 采样点, {written} 帧")
+        print(f"  線画完了（骨格）：{n}サンプル点、{written}フレーム")
 
     # ── 添彩段入口：按 color_fill 分发到对应风格 ──
     def wash_color(self, writer: cv2.VideoWriter, target_frames: int) -> None:
@@ -1471,7 +1465,7 @@ class StreamBoardRenderer:
         n = len(path)
         disk = _feathered_disk(self.cfg.brush_radius)
         if n == 0:
-            print("  无墨迹，跳过添彩段")
+            print("  描画対象の線がないため、着色工程を省略します")
             gaze = self.color_img
             for _ in range(target_frames):
                 writer.write(gaze)
@@ -1496,27 +1490,27 @@ class StreamBoardRenderer:
             written += 1
             last_cell_idx = ci
             if (fi + 1) % max(1, target_frames // 10) == 0:
-                print(f"  添彩进度: {int((fi + 1) / target_frames * 100)}%")
+                print(f"  着色の進行状況：{int((fi + 1) / target_frames * 100)}%")
 
         # 收尾兜底
         last = centers[-1]
         while written < target_frames:
             writer.write(self._snapshot_with_tip(*last))
             written += 1
-        print(f"  添彩完成: {n} 格, {written} 帧")
+        print(f"  着色完了：{n}セル、{written}フレーム")
 
     # ── contour-wipe：轮廓感知自上而下扫描上色 ──
     def wash_color_contour(self, writer: cv2.VideoWriter, target_frames: int) -> None:
         """
-        颜色不沿笔画轨迹刷，而是全局自上而下扫一道揭示前沿。
-        前沿遇轮廓先卡住（阻力≈1 扣减 delay_px），再随其下方衰减阴影缓慢越过，
-        形成"颜色沿着线蔓延"的观感。笔尖做横向来回扫动，模拟手在涂色。
+        筆跡に沿って塗らず、画像全体を上から下へ表示前線で走査する。
+        前線は輪郭の抵抗で遅れ、その下の減衰する影をゆっくり越えるため、
+        色が線に沿って広がって見える。筆先は左右に往復し、手塗りの動きを再現する。
         """
         cfg = self.cfg
         h, w = self.out_h, self.out_w
 
         if target_frames <= 0:
-            print("  无添彩帧，跳过 contour-wipe 段")
+            print("  着色用フレームがないため、contour-wipe工程を省略します")
             return
 
         # 一次性预计算：阻力场、水波边界、扣减像素数、行坐标网格
@@ -1530,7 +1524,7 @@ class StreamBoardRenderer:
         # color_img 是揭示目标
         color_src = self.color_img.astype(np.float32)
 
-        print(f"  contour-wipe: {w}x{h}, delay_px={delay_px}, 趟数={blocks}")
+        print(f"  contour-wipe：{w}x{h}、delay_px={delay_px}、走査回数={blocks}")
 
         written = 0
         # 揭示前沿从 -delay_px 扫到 h+delay_px，全程覆盖
@@ -1566,7 +1560,7 @@ class StreamBoardRenderer:
             writer.write(self._snapshot_with_tip(cursor_x, cursor_y))
             written += 1
             if (fi + 1) % report_step == 0:
-                print(f"  添彩进度(contour-wipe): {int((fi + 1) / target_frames * 100)}%")
+                print(f"  着色の進行状況（contour-wipe）：{int((fi + 1) / target_frames * 100)}%")
 
         # 收尾兜底：确保整图已揭示（最后一帧进度=1 时 lead≈h+delay_px，理论上全覆盖）
         full_reveal = np.ones((h, w), dtype=bool)
@@ -1575,7 +1569,7 @@ class StreamBoardRenderer:
         while written < target_frames:
             writer.write(last)
             written += 1
-        print(f"  contour-wipe 完成: {written} 帧")
+        print(f"  contour-wipe完了：{written}フレーム")
 
     def render_to(self, raw_path: Path, total_ms: int) -> Path:
         cfg = self.cfg
@@ -1585,10 +1579,10 @@ class StreamBoardRenderer:
         fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(str(raw_path), fourcc, cfg.fps, (self.out_w, self.out_h))
 
-        print(f"  墨流: {len(self.ink_streams)} 条, 墨迹格: {ink_cells}")
+        print(f"  筆跡経路：{len(self.ink_streams)}本、描画セル：{ink_cells}")
         print(
-            f"  时长: {total_ms}ms -> 起笔 {plan.ink_frames}f / "
-            f"添彩 {plan.color_frames}f / 凝视 {plan.gaze_frames}f (权重 {plan.ratio_label})"
+            f"  長さ：{total_ms}ms → 線画 {plan.ink_frames}f / "
+            f"着色 {plan.color_frames}f / 静止 {plan.gaze_frames}f（比率 {plan.ratio_label}）"
         )
 
         started = time.time()
@@ -1599,7 +1593,7 @@ class StreamBoardRenderer:
         for _ in range(plan.gaze_frames):
             writer.write(gaze_img)
         writer.release()
-        print(f"  渲染耗时: {time.time() - started:.1f}s")
+        print(f"  レンダリング時間：{time.time() - started:.1f}秒")
         return raw_path
 
 
@@ -1608,12 +1602,12 @@ class StreamBoardRenderer:
 # ──────────────────────────────────────────────────────────────
 def transcode_h264(src: Path, dst: Path) -> Path:
     """
-    把 mp4v 原始视频转码为 H.264（yuv420p），提升播放器兼容性。
+    mp4v動画をH.264（yuv420p）へ変換し、プレーヤーとの互換性を高める。
 
-    优先级：
-      1. 系统 ffmpeg 子进程（编码效率最高、体积最小，CRF=20）
-      2. PyAV（纯 pip 安装，无需系统 ffmpeg；编码效率稍逊，用 CRF=28 控制体积）
-      3. 两者都没有：保留原始 mp4v 编码并告警
+    優先順位：
+      1. システムのffmpeg（変換効率が高く、容量が小さい。CRF=20）
+      2. PyAV（pipだけで導入可能。CRF=28で容量を抑える）
+      3. どちらもなければ元のmp4vを残して警告する
     """
     # 路径1：系统 ffmpeg（推荐，体积最优）
     ffmpeg = shutil.which("ffmpeg")
@@ -1629,9 +1623,9 @@ def transcode_h264(src: Path, dst: Path) -> Path:
         res = subprocess.run(cmd, capture_output=True, text=True)
         if res.returncode == 0:
             src.unlink(missing_ok=True)
-            print(f"  H.264 转码完成(ffmpeg): {dst}")
+            print(f"  H.264変換完了（ffmpeg）：{dst}")
             return dst
-        print(f"  [warn] ffmpeg 转码失败: {res.stderr.strip()}")
+        print(f"  [警告] ffmpegによる変換に失敗しました：{res.stderr.strip()}")
 
     # 路径2：PyAV（备选，纯 pip 安装）
     try:
@@ -1639,19 +1633,19 @@ def transcode_h264(src: Path, dst: Path) -> Path:
     except ImportError:
         pass
     except Exception as e:
-        print(f"  [warn] PyAV 转码失败: {e}")
+        print(f"  [警告] PyAVによる変換に失敗しました：{e}")
 
     # 路径3：都没有，保留 mp4v
-    print(f"  [warn] 未找到 ffmpeg 和 PyAV，保留原始 mp4v 编码: {src}")
-    print(f"         安装任一即可获得 H.264: pip install av  或  安装系统 ffmpeg")
+    print(f"  [警告] ffmpegとPyAVが見つからないため、元のmp4v動画を残します：{src}")
+    print("         H.264へ変換するには、PyAV（pip install av）またはffmpegをインストールしてください")
     return src
 
 
 def _transcode_with_pyav(src: Path, dst: Path) -> Path:
     """
-    用 PyAV 在 Python 内做 H.264 转码。PyAV 未装时抛 ImportError。
-    PyAV 自带的 libx264 编码效率低于系统 ffmpeg（同 CRF 下体积大数倍），
-    故用 CRF=28 平衡体积与画质。
+    PyAVを使ってPython内でH.264へ変換する。未導入ならImportErrorを送出する。
+    付属のlibx264はシステムのffmpegより変換効率が低いため、
+    CRF=28で容量と画質の均衡を取る。
     """
     import av
     input_container = av.open(str(src), mode="r")
@@ -1679,7 +1673,7 @@ def _transcode_with_pyav(src: Path, dst: Path) -> Path:
     output_container.close()
     input_container.close()
     src.unlink(missing_ok=True)
-    print(f"  H.264 转码完成(PyAV): {dst}")
+    print(f"  H.264変換完了（PyAV）：{dst}")
     return dst
 
 

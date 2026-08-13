@@ -54,7 +54,7 @@ def _scaled_rect(region: dict, sx: float, sy: float, out_w: int, out_h: int) -> 
 
 
 def _frame_progress_indices(n_steps: int, target_frames: int) -> list[int]:
-    """把 n_steps 个笔尖位置均匀映射到 target_frames 帧。"""
+    """n_steps個の筆先位置をtarget_frames枚へ均等に割り当てる。"""
     if n_steps == 0 or target_frames <= 0:
         return []
     if target_frames == 1:
@@ -66,7 +66,7 @@ def _frame_progress_indices(n_steps: int, target_frames: int) -> list[int]:
 # 每区域的 stream 笔迹渲染，写入共享持久画布
 # ──────────────────────────────────────────────────────────────
 class RegionStreamRenderer:
-    """持有整段渲染的共享状态；逐区域把 stream 笔迹画进同一张画布。"""
+    """レンダリング全体の共有状態を保持し、領域ごとの筆跡を同じキャンバスへ描く。"""
 
     def __init__(self, image_bgr: np.ndarray, annotation: dict, cfg: sr.Config,
                  hand_png: Path | None, bare_tip: bool) -> None:
@@ -153,7 +153,7 @@ class RegionStreamRenderer:
 
     # ── 区域内笔迹路径 ──
     def _region_grid_path(self, allowed: np.ndarray) -> list[tuple[int, int]]:
-        """网格模式：把区域内含墨的格聚类并串成连续格路径。"""
+        """グリッド方式で、領域内の描画セルをまとめて連続経路にする。"""
         allowed_u8 = allowed.astype(np.uint8)
         allowed_cell = sr._to_grid_blocks(allowed_u8, self.cfg.grid_edge).any(axis=(2, 3))
         active = self.active_all & allowed_cell
@@ -163,7 +163,7 @@ class RegionStreamRenderer:
         return sr.flatten_streams(streams)
 
     def _region_skeleton_strokes(self, allowed: np.ndarray) -> list[list[tuple[int, int]]]:
-        """骨架模式：区域内墨迹细化 + 8 邻接追踪 + 重采样平滑。"""
+        """骨格方式で、領域内の線を細線化し、8近傍追跡と再標本化で滑らかにする。"""
         cfg = self.cfg
         region_ink = self.ink_pixels & allowed
         if not region_ink.any():
