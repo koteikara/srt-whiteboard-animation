@@ -1,0 +1,41 @@
+{
+  "sceneId": "title-article-creation",
+  "canvas": { "width": 1280, "height": 720 },
+  "storyBasis": "記事作成の基本操作というタイトルと、その流れを示す副題。",
+  "sceneDurationMs": 8000,
+  "elements": [
+    {
+      "id": "main-title",
+      "label": "メインタイトル",
+      "sequence": 1,
+      "narrativeRole": "動画の主題を示す",
+      "subtitle": "記事作成の基本操作",
+      "type": "text",
+      "region": { "x": 230, "y": 240, "width": 820, "height": 115 },
+      "reveal": { "direction": "left_to_right", "startMs": 300, "durationMs": 3500, "maskPaddingPx": 18, "protectedRegions": [] },
+      "handPath": { "start": [250, 305], "end": [1030, 305], "easing": "easeInOut" }
+    },
+    {
+      "id": "underline",
+      "label": "下線",
+      "sequence": 2,
+      "narrativeRole": "タイトルを強調する",
+      "subtitle": "記事作成の基本操作",
+      "type": "decoration",
+      "region": { "x": 270, "y": 355, "width": 280, "height": 25 },
+      "reveal": { "direction": "left_to_right", "startMs": 3900, "durationMs": 600, "maskPaddingPx": 8, "protectedRegions": [] },
+      "handPath": { "start": [280, 367], "end": [540, 367], "easing": "easeInOut" }
+    },
+    {
+      "id": "subtitle",
+      "label": "副題",
+      "sequence": 3,
+      "narrativeRole": "扱う三工程を補足する",
+      "subtitle": "作成・入力・確認依頼の流れ",
+      "type": "text",
+      "region": { "x": 350, "y": 380, "width": 580, "height": 70 },
+      "reveal": { "direction": "left_to_right", "startMs": 4700, "durationMs": 2800, "maskPaddingPx": 14, "protectedRegions": [] },
+      "handPath": { "start": [365, 415], "end": [915, 415], "easing": "easeInOut" }
+    }
+  ]
+}
